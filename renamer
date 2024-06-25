@@ -1,0 +1,142 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Windows.Forms;
+using System.Linq;
+using Newtonsoft.Json;
+
+namespace FileRenamer
+{
+    public partial class MainForm : Form
+    {
+        private List<FileItem> fileList = new List<FileItem>();
+        private const string ConfigFile = "renamer_config.json";
+
+        public MainForm()
+        {
+            InitializeComponent();
+            LoadConfig();
+            UpdateCurrentDate();
+        }
+
+        private void InitializeComponent()
+        {
+            // 这里是Windows Forms控件的初始化代码
+            // 包括文本框、复选框、列表视图、按钮等
+            // 由于代码较长，这里省略具体实现
+        }
+
+        private void LoadConfig()
+        {
+            if (File.Exists(ConfigFile))
+            {
+                var config = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(ConfigFile));
+                if (config.ContainsKey("last_signature"))
+                {
+                    txtSignature.Text = config["last_signature"];
+                }
+            }
+        }
+
+        private void SaveConfig()
+        {
+            var config = new Dictionary<string, string>
+            {
+                ["last_signature"] = txtSignature.Text
+            };
+            File.WriteAllText(ConfigFile, JsonConvert.SerializeObject(config));
+        }
+
+        private void UpdateCurrentDate()
+        {
+            lblCurrentDate.Text = $"当前日期: {DateTime.Now.ToString("yyyy-MM-dd")}";
+        }
+
+        private void listViewFiles_DragEnter(object sender, DragEventArgs e)
+        {
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                e.Effect = DragDropEffects.Copy;
+        }
+
+        private void listViewFiles_DragDrop(object sender, DragEventArgs e)
+        {
+            string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            foreach (string file in files)
+            {
+                if (File.Exists(file))
+                {
+                    var fileInfo = new FileInfo(file);
+                    fileList.Add(new FileItem
+                    {
+                        Name = fileInfo.Name,
+                        Path = fileInfo.DirectoryName,
+                        Modified = fileInfo.LastWriteTime
+                    });
+                }
+            }
+            UpdateListView();
+        }
+
+        private void UpdateListView()
+        {
+            listViewFiles.Items.Clear();
+            foreach (var file in fileList)
+            {
+                var item = new ListViewItem(new[] { file.Name, file.Path, file.Modified.ToString("yyyy-MM-dd HH:mm:ss") });
+                listViewFiles.Items.Add(item);
+            }
+        }
+
+        private void btnDeleteSelected_Click(object sender, EventArgs e)
+        {
+            foreach (ListViewItem item in listViewFiles.SelectedItems)
+            {
+                fileList.RemoveAt(item.Index);
+            }
+            UpdateListView();
+        }
+
+        private void btnRename_Click(object sender, EventArgs e)
+        {
+            string signature = txtSignature.Text;
+            if (!int.TryParse(txtStartNumber.Text, out int startNumber))
+            {
+                MessageBox.Show("请输入有效的起始序号", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            string today = DateTime.Now.ToString("yyyyMMdd");
+
+            for (int i = 0; i < fileList.Count; i++)
+            {
+                var file = fileList[i];
+                string fileName = Path.GetFileNameWithoutExtension(file.Name);
+                string extension = Path.GetExtension(file.Name);
+                string newName = $"{startNumber + i:D2}_{fileName}";
+
+                if (chkIncludeDate.Checked)
+                    newName += $"_{today}";
+                if (!string.IsNullOrEmpty(signature))
+                    newName += $"_{signature}";
+
+                newName += extension;
+
+                string oldPath = Path.Combine(file.Path, file.Name);
+                string newPath = Path.Combine(file.Path, newName);
+                File.Move(oldPath, newPath);
+            }
+
+            MessageBox.Show($"成功重命名 {fileList.Count} 个文件", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            fileList.Clear();
+            UpdateListView();
+            SaveConfig();
+        }
+    }
+
+    public class FileItem
+    {
+        public string Name { get; set; }
+        public string Path { get; set; }
+        public DateTime Modified { get; set; }
+    }
+}
